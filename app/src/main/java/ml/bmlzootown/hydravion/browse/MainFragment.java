@@ -97,6 +97,8 @@ public class MainFragment extends BrowseSupportFragment {
     private final Handler liveHandler = new Handler(Looper.getMainLooper());
     private int liveIndex = -1;
 
+    private ArrayObjectAdapter rowsAdapter;
+
     @Override
     public void onActivityCreated(Bundle savedInstanceState) {
         //Log.i(TAG, "onCreate");
@@ -153,6 +155,7 @@ public class MainFragment extends BrowseSupportFragment {
         refreshSubscriptions();
         prepareBackgroundManager();
         setupUIElements();
+        initAdapter();
         setupEventListeners();
 
         // Setup Socket
@@ -354,19 +357,76 @@ public class MainFragment extends BrowseSupportFragment {
     }
 
     private void gotVideos(String creatorGUID, Video[] vids) {
+        boolean isNewCreator = false;
         if (videos.get(creatorGUID) != null && videos.get(creatorGUID).size() > 0) {
             videos.get(creatorGUID).addAll(Arrays.asList(vids));
         } else {
             videos.put(creatorGUID, new ArrayList<>(Arrays.asList(vids)));
+            isNewCreator = true;
         }
 
         if (subCount > 1) {
             subCount--;
         } else {
-            refreshRows();
-            subCount = subscriptions.size();
-            setSelectedPosition(rowSelected, false, new ListRowPresenter.SelectItemViewHolderTask(colSelected));
+            if (isNewCreator) {
+                CardPresenter cardPresenter = new CardPresenter();
+                ArrayObjectAdapter listRowAdapter = new ArrayObjectAdapter(cardPresenter);
+
+                int numSubs = rowsAdapter.size() - 1;
+                Subscription sub = null;
+                int row = getRow(creatorGUID, subscriptions);
+                if (row < 0) {
+                    Log.e(TAG, "Creator GUID not found in list of subscriptions!");
+                    return;
+                }
+                sub = subscriptions.get(row);
+                ArrayList<Video> vidsList = new ArrayList<Video>(Arrays.asList(vids));
+                vidsList.forEach(listRowAdapter::add);
+
+                HeaderItem header = new HeaderItem(numSubs, sub.getPlan().getTitle());
+                rowsAdapter.add(numSubs, new ListRow(header, listRowAdapter));
+            }
+            else {
+                for (int i = 0; i < rowsAdapter.size(); i++) {
+                    ListRow a = rowsAdapter.get(i) instanceof ListRow ? ((ListRow) rowsAdapter.get(i)) : null;
+                    if (a != null) {
+                        ArrayObjectAdapter adapter = a.getAdapter() instanceof ArrayObjectAdapter ? ((ArrayObjectAdapter) a.getAdapter()) : null;
+                        if (adapter != null) {
+                            if (adapter.size() > 0) {
+                                Video exampleVideo = adapter.get(0) instanceof Video ? ((Video) adapter.get(0)) : null;
+                                if (exampleVideo != null && creatorGUID.equalsIgnoreCase(exampleVideo.getCreator().getId())) {
+                                    ArrayList<Video> vidsList = new ArrayList<Video>(Arrays.asList(vids));
+                                    vidsList.forEach(adapter::add);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
+    }
+
+    private void initAdapter() {
+        rowsAdapter = new ArrayObjectAdapter(new ListRowPresenter());
+
+        if (!strms.isEmpty()) {
+            setupLiveCheck();
+        }
+
+        HeaderItem gridHeader = new HeaderItem(0, getString(R.string.settings));
+
+        GridItemPresenter mGridPresenter = new GridItemPresenter();
+        ArrayObjectAdapter gridRowAdapter = new ArrayObjectAdapter(mGridPresenter);
+        gridRowAdapter.add(getResources().getString(R.string.refresh));
+        gridRowAdapter.add(getResources().getString(R.string.live_stream));
+        //gridRowAdapter.add(getResources().getString(R.string.select_server));
+        gridRowAdapter.add(getResources().getString(R.string.app_info));
+        gridRowAdapter.add(getResources().getString(R.string.logout));
+        rowsAdapter.add(new ListRow(gridHeader, gridRowAdapter));
+
+        setAdapter(rowsAdapter);
+
+//        prepareEntranceTransition();
     }
 
     private void refreshRows() {
